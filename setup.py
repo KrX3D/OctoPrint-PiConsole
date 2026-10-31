@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name="OctoPrint-PiConsole",
-    version="0.2.0",
+    version="0.2.1",
     description="Web terminal and one-click shell scripts for the OctoPrint host (SSH check, system updates, ...)",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",

@@ -5,6 +5,7 @@ import getpass
 import os
 import pwd
 import re
+import signal
 
 from .sudo import run
 
@@ -24,11 +25,37 @@ class SshError(Exception):
     pass
 
 
+def _crash_signal(rc):
+    """Signal name if a process was killed by a signal (directly or reported by sudo), else None."""
+    number = -rc if rc < 0 else rc - 128 if rc > 128 else None
+    if number is None:
+        return None
+    try:
+        return signal.Signals(number).name
+    except ValueError:
+        return "signal {}".format(number)
+
+
 def _check(result, what):
     rc, out, err = result
     if rc != 0:
-        raise SshError("{} failed: {}".format(what, err or out or "exit code {}".format(rc)))
+        crash = _crash_signal(rc)
+        detail = err or out or ("crashed with {}".format(crash) if crash else "exit code {}".format(rc))
+        raise SshError("{} failed: {}".format(what, detail))
     return out
+
+
+def check_sshd(sudo):
+    rc, out, err = sudo.run([SSHD, "-t"])
+    if rc == 0:
+        return
+    crash = _crash_signal(rc)
+    if crash:
+        raise SshError(
+            "sshd crashes ({}) - its program files or libraries are damaged, usually by a failing SD card. "
+            "Run the 'Enable SSH' script, it reinstalls them, and 'Check system files' to see what else is damaged.".format(crash)
+        )
+    raise SshError("The sshd configuration is invalid: {}".format(err or out))
 
 
 def _read_file(path, sudo):
@@ -177,10 +204,11 @@ def set_ssh_allowed(name, allowed, sudo):
         return
 
     _write_dropin(after, sudo)
-    rc, out, err = sudo.run([SSHD, "-t"])
-    if rc != 0:
+    try:
+        check_sshd(sudo)
+    except SshError:
         _write_dropin(before, sudo)
-        raise SshError("sshd rejected the new configuration: {}".format(err or out))
+        raise
     if _unit_state("is-active", SERVICE) == "active":
         _check(sudo.run(["systemctl", "reload", SERVICE]), "Reloading SSH")
 
@@ -191,7 +219,7 @@ def set_service(enabled, sudo):
             raise SshError("openssh-server is not installed - run the 'Enable SSH' script, it installs it")
         # missing host keys are a common reason for sshd refusing to start on a Pi
         _check(sudo.run([SSH_KEYGEN, "-A"]), "Creating host keys")
-        _check(sudo.run([SSHD, "-t"]), "Checking the sshd configuration")
+        check_sshd(sudo)
         _check(sudo.run(["systemctl", "enable", SERVICE]), "Enabling SSH")
         _check(sudo.run(["systemctl", "restart", SERVICE]), "Starting SSH")
     else:
