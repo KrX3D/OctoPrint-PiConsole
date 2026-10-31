@@ -1,0 +1,35 @@
+<div id="piconsole_edit_dialog" class="modal hide fade piconsole-edit-dialog">
+    <div class="modal-header">
+        <a href="javascript:void(0)" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
+        <h3 data-bind="text: editTitle"></h3>
+    </div>
+    <div class="modal-body">
+        <form class="form-horizontal" onsubmit="return false;">
+            <div class="control-group">
+                <label class="control-label">{{ _('File name') }}</label>
+                <div class="controls">
+                    <div class="input-append">
+                        <input type="text" class="input-large" data-bind="value: editId, valueUpdate: 'input', enable: editIsNew">
+                        <span class="add-on">.sh</span>
+                    </div>
+                    <span class="help-inline text-error" data-bind="visible: editIsNew() && editId() && !editIdValid()">
+                        {{ _('Only letters, digits, - and _') }}
+                    </span>
+                </div>
+            </div>
+        </form>
+        <textarea class="piconsole-editor" spellcheck="false" wrap="off" data-bind="value: editContent, valueUpdate: 'input', attr: {readonly: !canEdit()}"></textarea>
+        <p class="muted piconsole-help">
+            {{ _('Header lines control how the script shows up:') }}
+            <code># @name:</code> <code># @description:</code>
+            <code># @confirm: true|false</code> <code># @block_while_printing: true|false</code>.
+            {{ _('Scripts run with bash as the OctoPrint user without a terminal, so use') }} <code>sudo -n</code> {{ _('for root commands.') }}
+        </p>
+    </div>
+    <div class="modal-footer">
+        <button class="btn" data-dismiss="modal" aria-hidden="true">{{ _('Close') }}</button>
+        <button class="btn btn-primary" data-bind="visible: canEdit, click: saveScript, enable: editIdValid() && !editSaving()">
+            <i class="fa fa-spinner fa-spin" data-bind="visible: editSaving"></i> {{ _('Save') }}
+        </button>
+    </div>
+</div>

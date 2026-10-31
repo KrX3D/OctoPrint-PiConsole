@@ -1,0 +1,42 @@
+<h3>{{ _('Pi Console') }}</h3>
+
+<form class="form-horizontal" onsubmit="return false;">
+    <div class="control-group">
+        <div class="controls">
+            <label class="checkbox">
+                <input type="checkbox" data-bind="checked: settings.plugins.piconsole.terminal_enabled"> {{ _('Enable the interactive terminal') }}
+            </label>
+            <span class="help-block">{{ _('Scripts keep working when the terminal is disabled.') }}</span>
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">{{ _('Shell') }}</label>
+        <div class="controls">
+            <input type="text" class="input-large" data-bind="value: settings.plugins.piconsole.shell">
+            <span class="help-block">{{ _('Absolute path, started as a login shell.') }}</span>
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">{{ _('Idle timeout') }}</label>
+        <div class="controls">
+            <div class="input-append">
+                <input type="number" min="0" class="input-mini" data-bind="value: settings.plugins.piconsole.terminal_idle_timeout">
+                <span class="add-on">{{ _('min') }}</span>
+            </div>
+            <span class="help-block">{{ _('Closes a terminal nobody has looked at for this long. 0 keeps it open until OctoPrint restarts.') }}</span>
+        </div>
+    </div>
+    <div class="control-group">
+        <label class="control-label">{{ _('Font size') }}</label>
+        <div class="controls">
+            <div class="input-append">
+                <input type="number" min="8" max="32" class="input-mini" data-bind="value: settings.plugins.piconsole.font_size">
+                <span class="add-on">px</span>
+            </div>
+        </div>
+    </div>
+</form>
+
+<p class="muted">
+    {{ _('Who may use the terminal, run or edit scripts is controlled by the "Pi Console" permissions under Settings > Access Control. By default only admins have them.') }}
+</p>

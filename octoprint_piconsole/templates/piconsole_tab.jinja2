@@ -1,0 +1,76 @@
+<div class="piconsole">
+    <div class="alert" data-bind="visible: !canRun() && !canEdit() && !canTerminal()">
+        {{ _('Your user has no Pi Console permissions. An admin can grant them under Settings > Access Control.') }}
+    </div>
+
+    <ul class="nav nav-pills" data-bind="visible: canRun() || canEdit() || canTerminal()">
+        <li data-bind="visible: canRun() || canEdit(), css: {active: view() === 'scripts'}">
+            <a href="javascript:void(0)" data-bind="click: function() { showView('scripts'); }"><i class="fa fa-list"></i> {{ _('Scripts') }}</a>
+        </li>
+        <li data-bind="visible: terminalAvailable, css: {active: view() === 'terminal'}">
+            <a href="javascript:void(0)" data-bind="click: function() { showView('terminal'); }"><i class="fa fa-terminal"></i> {{ _('Terminal') }}</a>
+        </li>
+    </ul>
+
+    <!-- Scripts -->
+    <div data-bind="visible: view() === 'scripts' && (canRun() || canEdit())">
+        <div class="piconsole-toolbar" data-bind="visible: canEdit">
+            <button class="btn btn-small" data-bind="click: newScript"><i class="fa fa-plus"></i> {{ _('New script') }}</button>
+            <button class="btn btn-small" data-bind="click: pickUpload"><i class="fa fa-upload"></i> {{ _('Upload .sh file') }}</button>
+            <button class="btn btn-small pull-right" data-bind="click: restoreDefaults"><i class="fa fa-undo"></i> {{ _('Restore built-in scripts') }}</button>
+            <input type="file" id="piconsole_upload" accept=".sh,.bash,.txt" class="hide" data-bind="event: {change: uploadSelected}">
+        </div>
+
+        <div class="piconsole-scripts" data-bind="foreach: scripts">
+            <div class="piconsole-script">
+                <div class="piconsole-script-info">
+                    <strong data-bind="text: name"></strong>
+                    <span class="label" data-bind="visible: builtin">{{ _('built-in') }}</span>
+                    <span class="label label-warning" data-bind="visible: block_while_printing">{{ _('not while printing') }}</span>
+                    <div class="muted piconsole-description" data-bind="text: description"></div>
+                    <small class="muted" data-bind="text: id + '.sh'"></small>
+                </div>
+                <div class="piconsole-actions">
+                    <button class="btn btn-primary btn-small" data-bind="visible: $parent.canRun, click: $parent.runScript, disable: $parent.isScriptRunning(id)">
+                        <i class="fa" data-bind="css: {'fa-play': !$parent.isScriptRunning(id), 'fa-spinner fa-spin': $parent.isScriptRunning(id)}"></i> {{ _('Run') }}
+                    </button>
+                    <button class="btn btn-small" data-bind="click: $parent.openScript, attr: {title: $parent.canEdit() ? $parent.textEdit : $parent.textView}">
+                        <i class="fa" data-bind="css: {'fa-pencil': $parent.canEdit(), 'fa-eye': !$parent.canEdit()}"></i>
+                    </button>
+                    <button class="btn btn-danger btn-small" title="{{ _('Delete') }}" data-bind="visible: $parent.canEdit, click: $parent.deleteScript">
+                        <i class="fa fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <p class="muted" data-bind="visible: scripts().length === 0">{{ _('No scripts yet.') }}</p>
+
+        <div data-bind="visible: canRun">
+            <h4>{{ _('Output') }}</h4>
+            <div class="piconsole-toolbar">
+                <select class="input-xlarge" data-bind="options: jobs, optionsText: jobLabel, optionsValue: 'id', value: selectedJobId, optionsCaption: '{{ _('No runs yet') }}'"></select>
+                <span class="label" data-bind="visible: selectedJob, text: selectedJob() ? selectedJob().status : '', css: jobStatusCss"></span>
+                <button class="btn btn-small btn-danger" data-bind="visible: selectedJob() && selectedJob().status === 'running', click: killSelectedJob">
+                    <i class="fa fa-stop"></i> {{ _('Stop') }}
+                </button>
+            </div>
+            <div id="piconsole_output" class="piconsole-term piconsole-output"></div>
+        </div>
+    </div>
+
+    <!-- Terminal -->
+    <div data-bind="visible: view() === 'terminal' && terminalAvailable()">
+        <div class="piconsole-terminal-wrapper" data-bind="css: {'piconsole-fullscreen': fullscreen}">
+            <div class="piconsole-toolbar">
+                <span class="label" data-bind="text: termStatusText, css: termStatusCss"></span>
+                <button class="btn btn-small" data-bind="click: restartTerminal"><i class="fa fa-refresh"></i> {{ _('Restart') }}</button>
+                <button class="btn btn-small" data-bind="click: closeTerminal, enable: termStatus() === 'connected'"><i class="fa fa-power-off"></i> {{ _('Close session') }}</button>
+                <button class="btn btn-small pull-right" data-bind="click: toggleFullscreen">
+                    <i class="fa" data-bind="css: {'fa-expand': !fullscreen(), 'fa-compress': fullscreen()}"></i>
+                </button>
+            </div>
+            <div id="piconsole_terminal" class="piconsole-term"></div>
+        </div>
+        <small class="muted">{{ _('The shell keeps running when you leave this tab and is closed after the idle timeout from the plugin settings.') }}</small>
+    </div>
+</div>

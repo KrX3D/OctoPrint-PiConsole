@@ -1,0 +1,5 @@
+include README.md
+include LICENSE
+recursive-include octoprint_piconsole/templates *
+recursive-include octoprint_piconsole/static *
+recursive-include octoprint_piconsole/default_scripts *
