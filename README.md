@@ -6,7 +6,7 @@ A shell for the machine OctoPrint runs on, right in the OctoPrint web UI, for wh
 - **Scripts**: saved shell scripts you run with one click (plus a confirmation, if the script asks for one). Output streams live into the tab, the last 20 runs are kept and can be copied or downloaded as a text file.
 - **SSH tab**: start/stop the SSH server, list every user that can log in, set a user's password and block or allow single users for SSH.
 - **sudo with password**: if the OctoPrint user has no passwordless sudo, the UI asks for its password when something needs root. It stays in the browser tab's memory until the page is reloaded and is never stored or logged on the server.
-- **Built-in scripts**: Check SSH, Enable SSH, Check for updates, Install updates, System info, OctoPrint logs, Follow OctoPrint log (live), Check system files (finds corrupt files from a failing SD card).
+- **Built-in scripts**: Check SSH, Enable SSH, Check for updates, Install updates, System info, OctoPrint logs, Follow OctoPrint log (live), Check system files (damaged files, SD card errors, overclock, heat, power), Diagnose crashes (finds the library that makes programs crash).
 
 ## Install
 

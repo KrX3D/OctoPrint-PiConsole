@@ -28,8 +28,12 @@ KEEP_FINISHED_JOBS = 20
 PREVIOUS_DEFAULTS = {
     "check_ssh": {"7f9efcea909bcec7f0392ffbd16b814d9f6c450a560d92fa05df5f577c2f8bbb"},
     "check_updates": {"8b8d3a991b2861e6479000612074b5afbd548a12f5256fb6354e4e748fbc7233"},
-    "enable_ssh": {"481b185c6b924bc94406d9953cb28e4029af8524d7020c73cdf978ebfea2e94f"},
+    "enable_ssh": {
+        "481b185c6b924bc94406d9953cb28e4029af8524d7020c73cdf978ebfea2e94f",
+        "ad9dcd3897fe5c9962aa4888ba51bf46ee48ef196c3efb3f1ec1db1f94f5b10f",
+    },
     "run_updates": {"b5f68c67da9b7efb754bcb1ec983d453e92089f2b6c32cab8b4278040688b761"},
+    "check_system_files": {"461538ceeaad03035133ec3df708a0315f1b919fed9410cd61089ef58dc01cbb"},
     "system_info": {"9401b2c5086f8b84ef58f4d39596382d82883a4a190baf83dfc63c765892182d"},
 }
 
