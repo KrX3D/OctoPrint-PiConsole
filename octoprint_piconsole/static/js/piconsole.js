@@ -50,6 +50,26 @@ $(function () {
         } catch (e) {}
     }
 
+    // navigator.clipboard only exists on HTTPS/localhost, OctoPi is usually plain HTTP
+    function copyText(text) {
+        var deferred = $.Deferred();
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(deferred.resolve, deferred.reject);
+            return deferred.promise();
+        }
+        var area = $("<textarea readonly></textarea>")
+            .css({position: "fixed", top: 0, left: 0, width: "1px", height: "1px", opacity: 0})
+            .val(text)
+            .appendTo("body");
+        area[0].select();
+        var ok = false;
+        try {
+            ok = document.execCommand("copy");
+        } catch (e) {}
+        area.remove();
+        return (ok ? deferred.resolve() : deferred.reject()).promise();
+    }
+
     function b64ToBytes(b64) {
         var bin = atob(b64);
         var bytes = new Uint8Array(bin.length);
@@ -98,6 +118,10 @@ $(function () {
         self.canTerminal = permission("TERMINAL");
         self.canRun = permission("RUN");
         self.canEdit = permission("EDIT");
+        self.canSsh = permission("SSH");
+        self.anyPermission = ko.pureComputed(function () {
+            return self.canRun() || self.canEdit() || self.canTerminal() || self.canSsh();
+        });
 
         self.terminalEnabled = ko.observable(true);
         self.fontSize = 14;
@@ -131,14 +155,18 @@ $(function () {
                 self.stopJobPolling();
                 return;
             }
-            if (self.view() === "terminal" && !self.terminalAvailable()) {
-                self.view("scripts");
-            }
-            if (self.view() === "scripts" && !self.canRun() && !self.canEdit() && self.terminalAvailable()) {
-                self.view("terminal");
-            }
+            var available = [];
+            if (self.canRun() || self.canEdit()) available.push("scripts");
+            if (self.terminalAvailable()) available.push("terminal");
+            if (self.canSsh()) available.push("ssh");
+            if (!available.length) return;
+            if (available.indexOf(self.view()) < 0) self.view(available[0]);
 
-            if (self.view() === "terminal") {
+            if (self.view() === "ssh") {
+                self.stopTermPolling();
+                self.stopJobPolling();
+                self.loadSsh();
+            } else if (self.view() === "terminal") {
                 self.stopJobPolling();
                 // wait for the container to become visible so xterm can measure it
                 setTimeout(function () {
@@ -172,6 +200,7 @@ $(function () {
             if (!self.canRun() && !self.canEdit()) return;
             OctoPrint.get(self.api + "scripts").done(function (response) {
                 self.scripts(response.scripts);
+                self.sudoMode(response.sudo_mode);
             });
         };
 
@@ -183,14 +212,16 @@ $(function () {
 
         self.runScript = function (script) {
             var start = function () {
-                OctoPrint.postJson(self.api + "scripts/" + script.id + "/run", {})
-                    .done(function (job) {
+                self.sudoRequest(
+                    script.sudo,
+                    "scripts/" + script.id + "/run",
+                    {},
+                    function (job) {
                         self.jobs.unshift(job);
                         self.selectJob(job.id);
-                    })
-                    .fail(function (xhr) {
-                        notifyError(_.sprintf(gettext("Could not run %(name)s"), {name: script.name}), xhr);
-                    });
+                    },
+                    _.sprintf(gettext("Could not run %(name)s"), {name: script.name})
+                );
             };
 
             var printing = self.printerState.isPrinting() || self.printerState.isPaused();
@@ -261,6 +292,286 @@ $(function () {
                         });
                 }
             });
+        };
+
+        // ~~ sudo password (kept in memory of this page only)
+
+        self.sudoMode = ko.observable(null);
+        self.sudoPassword = null;
+        self.sudoDialog = undefined;
+        self.sudoInput = ko.observable("");
+        self.sudoError = ko.observable("");
+        self.sudoOptional = ko.observable(false);
+        self.sudoFocus = ko.observable(false);
+        self.sudoCallback = null;
+
+        self.askSudo = function (optional, callback, error, onCancel) {
+            self.sudoInput("");
+            self.sudoError(error || "");
+            self.sudoOptional(optional);
+            self.sudoCallback = callback;
+            self.sudoOnCancel = onCancel;
+            // let a closing confirmation dialog finish its animation first
+            setTimeout(function () {
+                self.sudoDialog.modal("show");
+                self.sudoFocus(true);
+            }, 400);
+        };
+
+        self.submitSudo = function () {
+            var password = self.sudoInput();
+            if (!password) return;
+            self.sudoPassword = password;
+            self.sudoInput("");
+            self.finishSudo(password);
+        };
+
+        self.skipSudo = function () {
+            self.finishSudo(null);
+        };
+
+        self.finishSudo = function (password) {
+            var callback = self.sudoCallback;
+            self.sudoCallback = self.sudoOnCancel = null;
+            self.sudoDialog.modal("hide");
+            if (callback) callback(password);
+        };
+
+        self.sudoCancelled = function () {
+            var onCancel = self.sudoOnCancel;
+            if (!self.sudoCallback) return; // closed via Continue / Run without sudo
+            self.sudoCallback = self.sudoOnCancel = null;
+            if (onCancel) onCancel();
+        };
+
+        // need: "required", "optional" or "no"
+        self.withSudo = function (need, action, error, onCancel) {
+            if (self.sudoPassword) {
+                action(self.sudoPassword);
+            } else if (self.sudoMode() === "password" && (need === "required" || need === "optional")) {
+                self.askSudo(need === "optional", action, error, onCancel);
+            } else {
+                action(null); // the server says so if a password is needed after all
+            }
+        };
+
+        self.sudoRequest = function (need, path, data, done, failTitle, always, error) {
+            self.withSudo(need, function (password) {
+                var payload = _.extend({}, data);
+                if (password) payload.sudo_password = password;
+                OctoPrint.postJson(self.api + path, payload)
+                    .done(done)
+                    .fail(function (xhr) {
+                        var response = xhr.responseJSON || {};
+                        if (response.reason === "sudo_password") {
+                            self.sudoPassword = null;
+                            self.sudoMode("password");
+                            var retryNeed = need === "optional" ? "optional" : "required";
+                            self.sudoRequest(retryNeed, path, data, done, failTitle, always, response.error);
+                            return;
+                        }
+                        notifyError(failTitle, xhr);
+                        if (always) always();
+                    })
+                    .done(function () {
+                        if (always) always();
+                    });
+            }, error, always);
+        };
+
+        // ~~ SSH users & server
+
+        self.ssh = ko.observable(null);
+        self.sshBusy = ko.observable(false);
+
+        self.applySsh = function (overview) {
+            self.ssh(overview);
+            self.sudoMode(overview.sudo_mode);
+        };
+
+        self.loadSsh = function () {
+            if (!self.canSsh()) return;
+            var payload = self.sudoPassword ? {sudo_password: self.sudoPassword} : {};
+            OctoPrint.postJson(self.api + "ssh/overview", payload)
+                .done(self.applySsh)
+                .fail(function (xhr) {
+                    if ((xhr.responseJSON || {}).reason === "sudo_password") {
+                        self.sudoPassword = null;
+                        self.loadSsh();
+                        return;
+                    }
+                    notifyError(gettext("Could not load the SSH overview"), xhr);
+                });
+        };
+
+        self.unlockSsh = function () {
+            self.sudoRequest("required", "ssh/overview", {}, self.applySsh, gettext("Could not load the SSH overview"));
+        };
+
+        self.sshAction = function (path, data, failTitle) {
+            self.sshBusy(true);
+            self.sudoRequest("required", path, data, self.applySsh, failTitle, function () {
+                self.sshBusy(false);
+            });
+        };
+
+        self.setSshService = function (enabled) {
+            var running = self.ssh() && self.ssh().service.running;
+            showConfirmationDialog({
+                title: enabled
+                    ? running
+                        ? gettext("Restart the SSH server?")
+                        : gettext("Enable and start the SSH server?")
+                    : gettext("Stop and disable the SSH server?"),
+                html: enabled
+                    ? "<p>" + gettext("Missing host keys are created, the configuration is checked and the SSH server is (re)started and enabled at boot.") + "</p>"
+                    : "<p>" + gettext("Nobody can log in via SSH anymore until it is enabled again. Open SSH sessions stay connected.") + "</p>",
+                proceed: enabled ? gettext("Start") : gettext("Stop"),
+                proceedClass: enabled ? "primary" : "danger",
+                onproceed: function () {
+                    self.sshAction("ssh/service", {enabled: enabled}, gettext("Could not change the SSH server"));
+                }
+            });
+        };
+
+        self.toggleSshAccess = function (user) {
+            var allow = !user.ssh_allowed;
+            var html = "<p>" + _.sprintf(
+                allow ? gettext("%(name)s will be able to log in via SSH again.") : gettext("%(name)s can't log in via SSH anymore. Open sessions stay connected."),
+                {name: _.escape(user.name)}
+            ) + "</p>";
+            var others = _.filter(self.ssh().users, function (u) {
+                return u.name !== user.name && u.ssh_allowed;
+            });
+            if (!allow && !others.length) {
+                html += '<p class="text-error"><strong>' + gettext("This is the last user allowed to use SSH.") + "</strong></p>";
+            }
+            showConfirmationDialog({
+                title: allow ? gettext("Allow SSH?") : gettext("Block SSH?"),
+                html: html,
+                proceed: allow ? gettext("Allow") : gettext("Block"),
+                proceedClass: allow ? "primary" : "danger",
+                onproceed: function () {
+                    self.sshAction("ssh/users/" + encodeURIComponent(user.name) + "/access", {allowed: allow}, gettext("Could not change SSH access"));
+                }
+            });
+        };
+
+        self.passwordText = function (state) {
+            if (state === "P") return gettext("password set");
+            if (state === "L") return gettext("password locked");
+            if (state === "NP") return gettext("no password");
+            return gettext("password status unknown");
+        };
+
+        self.passwordCss = function (state) {
+            if (state === "P") return "label-success";
+            if (state === "L" || state === "NP") return "label-important";
+            return "";
+        };
+
+        // set password dialog
+
+        self.passwordDialog = undefined;
+        self.pwUser = ko.observable("");
+        self.pwNew = ko.observable("");
+        self.pwRepeat = ko.observable("");
+        self.pwSudo = ko.observable("");
+        self.pwShow = ko.observable(false);
+        self.pwError = ko.observable("");
+        self.pwSaving = ko.observable(false);
+        self.pwNeedsSudo = ko.observable(false);
+        self.pwProblem = ko.pureComputed(function () {
+            if ((self.pwNew() || "").length < 8) return gettext("At least 8 characters");
+            if (self.pwNew() !== self.pwRepeat()) return gettext("The passwords don't match");
+            return "";
+        });
+
+        self.openPasswordDialog = function (user) {
+            self.pwUser(user.name);
+            self.pwNew("");
+            self.pwRepeat("");
+            self.pwSudo("");
+            self.pwShow(false);
+            self.pwError("");
+            self.pwSaving(false);
+            self.pwNeedsSudo(self.sudoMode() === "password" && !self.sudoPassword);
+            self.passwordDialog.modal("show");
+        };
+
+        self.savePassword = function () {
+            if (self.pwProblem() || self.pwSaving()) return;
+            var sudoPassword = self.sudoPassword || self.pwSudo() || undefined;
+            self.pwSaving(true);
+            self.pwError("");
+            OctoPrint.postJson(self.api + "ssh/users/" + encodeURIComponent(self.pwUser()) + "/password", {
+                password: self.pwNew(),
+                sudo_password: sudoPassword
+            })
+                .done(function (overview) {
+                    if (sudoPassword) self.sudoPassword = sudoPassword;
+                    // changing the own password changes the sudo password too
+                    var octoprintUser = _.findWhere(overview.users, {octoprint_user: true});
+                    if (octoprintUser && octoprintUser.name === self.pwUser() && self.sudoPassword) {
+                        self.sudoPassword = self.pwNew();
+                    }
+                    self.applySsh(overview);
+                    self.passwordDialog.modal("hide");
+                    new PNotify({
+                        title: gettext("Password changed"),
+                        text: _.sprintf(gettext("The password of %(name)s was changed."), {name: _.escape(self.pwUser())}),
+                        type: "success",
+                        hide: true
+                    });
+                })
+                .fail(function (xhr) {
+                    var response = xhr.responseJSON || {};
+                    if (response.reason === "sudo_password") {
+                        self.sudoPassword = null;
+                        self.pwNeedsSudo(true);
+                        self.pwSudo("");
+                    }
+                    self.pwError(errorText(xhr));
+                })
+                .always(function () {
+                    self.pwSaving(false);
+                });
+        };
+
+        // ~~ output copy / download
+
+        self.outputText = function () {
+            if (!self.outputTerm) return "";
+            self.outputTerm.selectAll();
+            var text = self.outputTerm.getSelection();
+            self.outputTerm.clearSelection();
+            return text.replace(/\s+$/, "") + "\n";
+        };
+
+        self.copyOutput = function () {
+            copyText(self.outputText())
+                .done(function () {
+                    new PNotify({title: gettext("Copied"), text: gettext("The output is in the clipboard."), type: "success", hide: true, delay: 2000});
+                })
+                .fail(function () {
+                    new PNotify({title: gettext("Copy failed"), text: gettext("Use Download instead."), type: "error", hide: true});
+                });
+        };
+
+        self.downloadOutput = function () {
+            var job = self.selectedJob();
+            var stamp = job ? new Date(job.started * 1000).toISOString().replace(/[:T]/g, "-").substring(0, 19) : "output";
+            var name = (job ? job.script : "output") + "_" + stamp + ".txt";
+            var blob = new Blob([self.outputText()], {type: "text/plain;charset=utf-8"});
+            var link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(function () {
+                URL.revokeObjectURL(link.href);
+            }, 1000);
         };
 
         // ~~ edit dialog
@@ -700,6 +1011,9 @@ $(function () {
 
         self.onBeforeBinding = function () {
             self.editDialog = $("#piconsole_edit_dialog");
+            self.sudoDialog = $("#piconsole_sudo_dialog");
+            self.sudoDialog.on("hidden", self.sudoCancelled);
+            self.passwordDialog = $("#piconsole_password_dialog");
             self.readSettings();
         };
 
@@ -734,12 +1048,14 @@ $(function () {
             if (self.outputTerm) self.outputTerm.reset();
             self.scripts([]);
             self.jobs([]);
+            self.ssh(null);
+            self.sudoPassword = null;
         };
     }
 
     OCTOPRINT_VIEWMODELS.push({
         construct: PiConsoleViewModel,
         dependencies: ["loginStateViewModel", "accessViewModel", "printerStateViewModel", "settingsViewModel"],
-        elements: ["#tab_plugin_piconsole", "#piconsole_edit_dialog"]
+        elements: ["#tab_plugin_piconsole", "#piconsole_edit_dialog", "#piconsole_sudo_dialog", "#piconsole_password_dialog"]
     });
 });
