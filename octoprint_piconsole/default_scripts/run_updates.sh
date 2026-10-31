@@ -2,12 +2,13 @@
 # @name: Install updates
 # @description: Installs all available system updates (apt full-upgrade) and removes unused packages. Can take a while.
 # @confirm: true
+# @sudo: true
 # @block_while_printing: true
 
 set -o pipefail
 
 if ! sudo -n true 2>/dev/null; then
-    echo "ERROR: user '$(whoami)' needs passwordless sudo for this script."
+    echo "ERROR: user '$(whoami)' has no sudo rights (wrong password or not in the sudo group)."
     exit 1
 fi
 

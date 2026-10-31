@@ -2,9 +2,10 @@
 # @name: Enable SSH
 # @description: Installs the SSH server if missing, regenerates missing host keys, then enables and (re)starts it.
 # @confirm: true
+# @sudo: true
 
 if ! sudo -n true 2>/dev/null; then
-    echo "ERROR: user '$(whoami)' needs passwordless sudo for this script."
+    echo "ERROR: user '$(whoami)' has no sudo rights (wrong password or not in the sudo group)."
     exit 1
 fi
 

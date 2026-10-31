@@ -2,9 +2,10 @@
 # @name: Check for updates
 # @description: Refreshes the package lists and shows which system packages can be upgraded. Installs nothing.
 # @confirm: false
+# @sudo: true
 
 if ! sudo -n true 2>/dev/null; then
-    echo "ERROR: user '$(whoami)' needs passwordless sudo for this script."
+    echo "ERROR: user '$(whoami)' has no sudo rights (wrong password or not in the sudo group)."
     exit 1
 fi
 

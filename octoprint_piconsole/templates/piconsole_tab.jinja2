@@ -1,14 +1,17 @@
 <div class="piconsole">
-    <div class="alert" data-bind="visible: !canRun() && !canEdit() && !canTerminal()">
+    <div class="alert" data-bind="visible: !anyPermission()">
         {{ _('Your user has no Pi Console permissions. An admin can grant them under Settings > Access Control.') }}
     </div>
 
-    <ul class="nav nav-pills" data-bind="visible: canRun() || canEdit() || canTerminal()">
+    <ul class="nav nav-pills" data-bind="visible: anyPermission">
         <li data-bind="visible: canRun() || canEdit(), css: {active: view() === 'scripts'}">
             <a href="javascript:void(0)" data-bind="click: function() { showView('scripts'); }"><i class="fa fa-list"></i> {{ _('Scripts') }}</a>
         </li>
         <li data-bind="visible: terminalAvailable, css: {active: view() === 'terminal'}">
             <a href="javascript:void(0)" data-bind="click: function() { showView('terminal'); }"><i class="fa fa-terminal"></i> {{ _('Terminal') }}</a>
+        </li>
+        <li data-bind="visible: canSsh, css: {active: view() === 'ssh'}">
+            <a href="javascript:void(0)" data-bind="click: function() { showView('ssh'); }"><i class="fa fa-key"></i> {{ _('SSH') }}</a>
         </li>
     </ul>
 
@@ -26,6 +29,7 @@
                 <div class="piconsole-script-info">
                     <strong data-bind="text: name"></strong>
                     <span class="label" data-bind="visible: builtin">{{ _('built-in') }}</span>
+                    <span class="label label-info" data-bind="visible: sudo === 'required'">sudo</span>
                     <span class="label label-warning" data-bind="visible: block_while_printing">{{ _('not while printing') }}</span>
                     <div class="muted piconsole-description" data-bind="text: description"></div>
                     <small class="muted" data-bind="text: id + '.sh'"></small>
@@ -53,6 +57,10 @@
                 <button class="btn btn-small btn-danger" data-bind="visible: selectedJob() && selectedJob().status === 'running', click: killSelectedJob">
                     <i class="fa fa-stop"></i> {{ _('Stop') }}
                 </button>
+                <span class="pull-right" data-bind="visible: selectedJob">
+                    <button class="btn btn-small" data-bind="click: copyOutput" title="{{ _('Copy the whole output to the clipboard') }}"><i class="fa fa-copy"></i> {{ _('Copy') }}</button>
+                    <button class="btn btn-small" data-bind="click: downloadOutput" title="{{ _('Save the output as a text file') }}"><i class="fa fa-download"></i> {{ _('Download') }}</button>
+                </span>
             </div>
             <div id="piconsole_output" class="piconsole-term piconsole-output"></div>
         </div>
@@ -72,5 +80,63 @@
             <div id="piconsole_terminal" class="piconsole-term"></div>
         </div>
         <small class="muted">{{ _('The shell keeps running when you leave this tab and is closed after the idle timeout from the plugin settings.') }}</small>
+    </div>
+
+    <!-- SSH -->
+    <div data-bind="visible: view() === 'ssh' && canSsh()">
+        <p data-bind="visible: !ssh()"><i class="fa fa-spinner fa-spin"></i> {{ _('Loading...') }}</p>
+
+        <!-- ko with: ssh -->
+        <div class="alert alert-info" data-bind="visible: !sudo_available">
+            <span data-bind="visible: sudo_mode === 'password'">
+                {{ _('Changing passwords and the SSH server needs root rights, and sudo asks for the password of the OctoPrint user.') }}
+                <button class="btn btn-small btn-primary" data-bind="click: $root.unlockSsh"><i class="fa fa-unlock"></i> {{ _('Enter sudo password') }}</button>
+            </span>
+            <span data-bind="visible: sudo_mode === 'none'">{{ _('sudo is not installed, nothing can be changed from here.') }}</span>
+        </div>
+
+        <h4>{{ _('SSH server') }}</h4>
+        <div class="piconsole-ssh-service">
+            <span class="label" data-bind="css: service.running ? 'label-success' : 'label-important', text: service.running ? '{{ _('running') }}' : (service.active === 'failed' ? '{{ _('failed') }}' : '{{ _('stopped') }}')"></span>
+            <span class="muted">{{ _('start at boot:') }} <strong data-bind="text: service.enabled"></strong></span>
+            <span class="label label-important" data-bind="visible: !service.installed">{{ _('openssh-server not installed') }}</span>
+            <span class="pull-right">
+                <button class="btn btn-small btn-success" data-bind="click: function() { $root.setSshService(true); }, disable: $root.sshBusy">
+                    <i class="fa fa-play"></i> <span data-bind="text: service.running ? '{{ _('Restart') }}' : '{{ _('Enable & start') }}'"></span>
+                </button>
+                <button class="btn btn-small btn-danger" data-bind="click: function() { $root.setSshService(false); }, disable: $root.sshBusy() || (!service.running && service.enabled !== 'enabled')">
+                    <i class="fa fa-stop"></i> {{ _('Stop & disable') }}
+                </button>
+            </span>
+        </div>
+        <p class="muted" data-bind="visible: service.running && ips.length">
+            {{ _('Connect with:') }} <code data-bind="text: 'ssh USER@' + ips[0]"></code>
+        </p>
+
+        <h4>{{ _('Users that can log in') }}</h4>
+        <div class="piconsole-scripts" data-bind="foreach: users">
+            <div class="piconsole-script">
+                <div class="piconsole-script-info">
+                    <strong data-bind="text: name"></strong> <span class="muted" data-bind="text: 'uid ' + uid"></span>
+                    <span class="label" data-bind="visible: octoprint_user">{{ _('runs OctoPrint') }}</span>
+                    <div>
+                        <span class="label" data-bind="css: $root.passwordCss(password), text: $root.passwordText(password)"></span>
+                        <span class="label" data-bind="css: ssh_allowed ? 'label-success' : 'label-important', text: ssh_allowed ? '{{ _('SSH allowed') }}' : '{{ _('SSH blocked') }}'"></span>
+                    </div>
+                </div>
+                <div class="piconsole-actions">
+                    <button class="btn btn-small" data-bind="click: $root.openPasswordDialog, disable: $root.sshBusy"><i class="fa fa-key"></i> {{ _('Set password') }}</button>
+                    <button class="btn btn-small" data-bind="click: $root.toggleSshAccess, disable: $root.sshBusy() || !$parent.include_supported, attr: {title: $parent.include_supported ? '' : '{{ _('This sshd_config has no Include for sshd_config.d') }}'}">
+                        <i class="fa" data-bind="css: ssh_allowed ? 'fa-ban' : 'fa-check'"></i>
+                        <span data-bind="text: ssh_allowed ? '{{ _('Block SSH') }}' : '{{ _('Allow SSH') }}'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <p class="muted">
+            {{ _('Blocked users are listed in') }} <code data-bind="text: dropin"></code>.
+            <a href="javascript:void(0)" data-bind="click: $root.loadSsh"><i class="fa fa-refresh"></i> {{ _('Refresh') }}</a>
+        </p>
+        <!-- /ko -->
     </div>
 </div>

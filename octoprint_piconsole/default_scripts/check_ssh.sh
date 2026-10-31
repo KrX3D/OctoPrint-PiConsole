@@ -2,6 +2,7 @@
 # @name: Check SSH
 # @description: Shows whether the SSH server is installed, enabled and listening, which users can log in and recent SSH log entries.
 # @confirm: false
+# @sudo: optional
 
 can_sudo=0
 sudo -n true 2>/dev/null && can_sudo=1
@@ -23,6 +24,23 @@ if systemctl list-unit-files ssh.socket 2>/dev/null | grep -q '^ssh\.socket'; th
     echo "ssh.socket enabled:  $(systemctl is-enabled ssh.socket 2>&1)"
     echo "ssh.socket active:   $(systemctl is-active ssh.socket 2>&1)"
 fi
+if [ "$(systemctl is-active ssh.service 2>&1)" != "active" ]; then
+    echo
+    echo "ssh.service is not running, last status:"
+    systemctl status ssh.service --no-pager -l -n 15 2>&1 | sed 's/^/  /'
+fi
+echo
+
+echo "== Host keys =="
+keys=$(ls -l /etc/ssh/ssh_host_*_key 2>/dev/null)
+if [ -n "$keys" ]; then
+    echo "$keys"
+    if ls -l /etc/ssh/ssh_host_*_key 2>/dev/null | awk '$5 == 0 {found = 1} END {exit !found}'; then
+        echo "Some host keys are EMPTY - sshd can't start. 'Enable SSH' or the SSH tab regenerates them."
+    fi
+else
+    echo "No host keys found - sshd can't start. 'Enable SSH' or the SSH tab creates them."
+fi
 echo
 
 echo "== Listening sockets =="
@@ -36,13 +54,14 @@ echo
 
 echo "== Effective sshd settings =="
 if [ "$can_sudo" = 1 ]; then
-    sudo -n sshd -T 2>&1 | grep -Ei '^(port|listenaddress|passwordauthentication|pubkeyauthentication|permitrootlogin|allowusers|denyusers|allowgroups) '
-    echo
-    echo "Host keys:"
-    ls -l /etc/ssh/ssh_host_*_key 2>/dev/null || echo "  none found - sshd can't start without them ('Enable SSH' regenerates them)"
+    if ! sudo -n /usr/sbin/sshd -t 2>&1; then
+        echo "The sshd configuration has ERRORS (see above) - sshd refuses to start."
+    fi
+    sudo -n /usr/sbin/sshd -T 2>&1 | grep -Ei '^(port|listenaddress|passwordauthentication|pubkeyauthentication|permitrootlogin|allowusers|denyusers|allowgroups) '
 else
-    grep -hEi '^\s*(port|passwordauthentication|pubkeyauthentication|permitrootlogin|allowusers)\b' \
+    grep -hEi '^\s*(port|passwordauthentication|pubkeyauthentication|permitrootlogin|allowusers|denyusers)\b' \
         /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || echo "(defaults)"
+    echo "(run again with the sudo password for a full config check)"
 fi
 echo
 
@@ -75,8 +94,11 @@ echo "Note: newer Raspberry Pi OS / OctoPi images have no default pi/raspberry l
 echo
 
 echo "== Last SSH log entries =="
-if [ "$can_sudo" = 1 ]; then
-    sudo -n journalctl -u ssh.service -u ssh.socket -n 25 --no-pager 2>&1
+# members of the adm/systemd-journal group (pi on Raspberry Pi OS) can read the journal without sudo
+if journalctl -u ssh.service -u ssh.socket -n 25 --no-pager -q 2>/dev/null | grep -q .; then
+    journalctl -u ssh.service -u ssh.socket -n 25 --no-pager -q
+elif [ "$can_sudo" = 1 ]; then
+    sudo -n journalctl -u ssh.service -u ssh.socket -n 25 --no-pager -q 2>&1
 else
-    echo "(needs passwordless sudo)"
+    echo "(not readable - run again with the sudo password)"
 fi

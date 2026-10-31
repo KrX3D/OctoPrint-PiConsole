@@ -12,7 +12,9 @@ from octoprint.access import ADMIN_GROUP
 from octoprint.access.permissions import Permissions
 from octoprint.util import RepeatedTimer
 
+from . import ssh
 from .scripts import MAX_SCRIPT_SIZE, ScriptRunner, ScriptStore, valid_id
+from .sudo import Sudo, detect_mode
 from .terminal import TerminalManager
 
 MAX_INPUT_SIZE = 64 * 1024
@@ -50,14 +52,20 @@ class PiConsolePlugin(
             os.path.join(data_folder, "scripts"),
             os.path.join(self._basefolder, "default_scripts"),
         )
-        self._runner = ScriptRunner(os.path.join(data_folder, "tmp"), self._logger)
+        self._runner = ScriptRunner(
+            os.path.join(data_folder, "tmp"),
+            self._logger,
+            env={"PICONSOLE_LOG_DIR": self._settings.global_get_basefolder("logs")},
+        )
 
     # ~~ StartupPlugin / ShutdownPlugin
 
     def on_after_startup(self):
-        added = self._store.install_defaults()
+        added, updated = self._store.install_defaults()
         if added:
             self._logger.info("Installed built-in scripts: %s", ", ".join(added))
+        if updated:
+            self._logger.info("Updated unmodified built-in scripts: %s", ", ".join(updated))
         self._reaper = RepeatedTimer(30, self._reap_idle_terminals, daemon=True)
         self._reaper.start()
 
@@ -133,6 +141,14 @@ class PiConsolePlugin(
                 dangerous=True,
                 default_groups=[ADMIN_GROUP],
             ),
+            dict(
+                key="SSH",
+                name="SSH users",
+                description="Change Linux user passwords, block or allow users for SSH and switch the SSH server on or off",
+                roles=["ssh"],
+                dangerous=True,
+                default_groups=[ADMIN_GROUP],
+            ),
         ]
 
     def _can(self, key):
@@ -150,6 +166,21 @@ class PiConsolePlugin(
     @staticmethod
     def _json():
         return flask.request.get_json(silent=True) or {}
+
+    def _sudo(self, required):
+        """Sudo for this request, using the password the browser sent (never stored).
+
+        Returns ``(sudo, error_response)``.
+        """
+        password = self._json().get("sudo_password")
+        sudo = Sudo(password if isinstance(password, str) else None)
+        if not required and sudo.password is None:
+            return sudo, None
+        error = sudo.verify()
+        if error:
+            reason = "sudo_password" if sudo.mode == "password" else "sudo"
+            return sudo, flask.make_response(flask.jsonify(error=error, reason=reason), 400)
+        return sudo, None
 
     # ~~ BlueprintPlugin
 
@@ -236,7 +267,7 @@ class PiConsolePlugin(
     @octoprint.plugin.BlueprintPlugin.route("/scripts", methods=["GET"])
     def scripts_list(self):
         self._require("RUN", "EDIT")
-        return flask.jsonify(scripts=self._store.list())
+        return flask.jsonify(scripts=self._store.list(), sudo_mode=detect_mode())
 
     @octoprint.plugin.BlueprintPlugin.route("/scripts/<script_id>", methods=["GET"])
     def script_get(self, script_id):
@@ -280,7 +311,11 @@ class PiConsolePlugin(
         if script["block_while_printing"] and (self._printer.is_printing() or self._printer.is_paused()):
             return _error("{} can't run while a print is active".format(script["name"]), 409)
 
-        job = self._runner.start(script_id, script["name"], self._store.read(script_id), self._user())
+        sudo, error = self._sudo(required=script["sudo"] == "required")
+        if error is not None:
+            return error
+
+        job = self._runner.start(script_id, script["name"], self._store.read(script_id), self._user(), sudo)
         if job is None:
             return _error("{} is already running".format(script["name"]), 409)
         self._logger.info("Script %s started by user %s (job %s)", script_id, job.owner, job.id)
@@ -292,6 +327,62 @@ class PiConsolePlugin(
         self._store.restore_defaults()
         self._logger.info("Built-in scripts restored by user %s", self._user())
         return flask.jsonify(scripts=self._store.list())
+
+    # ssh (all POST, the sudo password must not end up in URLs or access logs)
+
+    @octoprint.plugin.BlueprintPlugin.route("/ssh/overview", methods=["POST"])
+    def ssh_overview(self):
+        self._require("SSH")
+        sudo, error = self._sudo(required=False)
+        if error is not None:
+            return error
+        return flask.jsonify(ssh.overview(sudo))
+
+    @octoprint.plugin.BlueprintPlugin.route("/ssh/service", methods=["POST"])
+    def ssh_service(self):
+        self._require("SSH")
+        sudo, error = self._sudo(required=True)
+        if error is not None:
+            return error
+        enabled = bool(self._json().get("enabled"))
+        self._logger.info("SSH server %s requested by user %s", "start" if enabled else "stop", self._user())
+        try:
+            ssh.set_service(enabled, sudo)
+        except ssh.SshError as e:
+            self._logger.warning("Switching the SSH server failed: %s", e)
+            return _error(str(e), 500)
+        return flask.jsonify(ssh.overview(sudo))
+
+    @octoprint.plugin.BlueprintPlugin.route("/ssh/users/<name>/password", methods=["POST"])
+    def ssh_password(self, name):
+        self._require("SSH")
+        password = self._json().get("password")
+        problem = ssh.validate_password(password)
+        if problem:
+            return _error(problem, 400)
+        sudo, error = self._sudo(required=True)
+        if error is not None:
+            return error
+        try:
+            ssh.set_password(name, password, sudo)
+        except ssh.SshError as e:
+            return _error(str(e), 400)
+        self._logger.info("Password of system user %s changed by user %s", name, self._user())
+        return flask.jsonify(ssh.overview(sudo))
+
+    @octoprint.plugin.BlueprintPlugin.route("/ssh/users/<name>/access", methods=["POST"])
+    def ssh_access(self, name):
+        self._require("SSH")
+        sudo, error = self._sudo(required=True)
+        if error is not None:
+            return error
+        allowed = bool(self._json().get("allowed"))
+        try:
+            ssh.set_ssh_allowed(name, allowed, sudo)
+        except ssh.SshError as e:
+            return _error(str(e), 400)
+        self._logger.info("SSH %s for system user %s by user %s", "allowed" if allowed else "blocked", name, self._user())
+        return flask.jsonify(ssh.overview(sudo))
 
     # jobs
 

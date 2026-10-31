@@ -102,3 +102,9 @@
         margin-left: 0;
     }
 }
+
+.piconsole-ssh-service {
+    margin-bottom: 8px;
+    overflow: hidden;
+    line-height: 26px;
+}

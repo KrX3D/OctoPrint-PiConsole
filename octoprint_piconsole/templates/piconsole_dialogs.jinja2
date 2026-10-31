@@ -1,3 +1,68 @@
+<div id="piconsole_sudo_dialog" class="modal hide fade">
+    <form class="form-horizontal" data-bind="submit: submitSudo" style="margin: 0">
+        <div class="modal-header">
+            <a href="javascript:void(0)" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
+            <h3>{{ _('sudo password') }}</h3>
+        </div>
+        <div class="modal-body">
+            <p>{{ _('This needs root rights. Enter the Linux password of the user OctoPrint runs as.') }}</p>
+            <div class="alert alert-error" data-bind="visible: sudoError, text: sudoError"></div>
+            <div class="control-group">
+                <label class="control-label">{{ _('Password') }}</label>
+                <div class="controls">
+                    <input type="password" class="input-large" autocomplete="current-password" data-bind="value: sudoInput, valueUpdate: 'input', hasFocus: sudoFocus">
+                </div>
+            </div>
+            <p class="muted">{{ _('It is kept in this browser tab until you reload the page and never saved on the server.') }}</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="button" class="btn" data-bind="visible: sudoOptional, click: skipSudo">{{ _('Run without sudo') }}</button>
+            <button type="submit" class="btn btn-primary" data-bind="enable: sudoInput">{{ _('Continue') }}</button>
+        </div>
+    </form>
+</div>
+
+<div id="piconsole_password_dialog" class="modal hide fade">
+    <form class="form-horizontal" data-bind="submit: savePassword" style="margin: 0">
+        <div class="modal-header">
+            <a href="javascript:void(0)" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
+            <h3>{{ _('Set password for') }} <span data-bind="text: pwUser"></span></h3>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-error" data-bind="visible: pwError, text: pwError"></div>
+            <div class="control-group">
+                <label class="control-label">{{ _('New password') }}</label>
+                <div class="controls">
+                    <input class="input-large" autocomplete="new-password" data-bind="value: pwNew, valueUpdate: 'input', attr: {type: pwShow() ? 'text' : 'password'}">
+                </div>
+            </div>
+            <div class="control-group">
+                <label class="control-label">{{ _('Repeat') }}</label>
+                <div class="controls">
+                    <input class="input-large" autocomplete="new-password" data-bind="value: pwRepeat, valueUpdate: 'input', attr: {type: pwShow() ? 'text' : 'password'}">
+                    <label class="checkbox"><input type="checkbox" data-bind="checked: pwShow"> {{ _('Show passwords') }}</label>
+                    <span class="help-block text-error" data-bind="visible: (pwNew() || pwRepeat()) && pwProblem(), text: pwProblem"></span>
+                </div>
+            </div>
+            <div class="control-group" data-bind="visible: pwNeedsSudo">
+                <label class="control-label">{{ _('sudo password') }}</label>
+                <div class="controls">
+                    <input type="password" class="input-large" autocomplete="current-password" data-bind="value: pwSudo, valueUpdate: 'input'">
+                    <span class="help-block">{{ _('Current password of the user OctoPrint runs as.') }}</span>
+                </div>
+            </div>
+            <p class="muted">{{ _('This is the Linux login password used for SSH and sudo. It is sent over your OctoPrint connection, use HTTPS when you are not on your own network.') }}</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" data-dismiss="modal">{{ _('Cancel') }}</button>
+            <button type="submit" class="btn btn-primary" data-bind="enable: !pwProblem() && !(pwNeedsSudo() && !pwSudo()) && !pwSaving()">
+                <i class="fa fa-spinner fa-spin" data-bind="visible: pwSaving"></i> {{ _('Set password') }}
+            </button>
+        </div>
+    </form>
+</div>
+
 <div id="piconsole_edit_dialog" class="modal hide fade piconsole-edit-dialog">
     <div class="modal-header">
         <a href="javascript:void(0)" class="close" data-dismiss="modal" aria-hidden="true">&times;</a>
