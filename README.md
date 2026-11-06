@@ -55,3 +55,7 @@ sudo -n systemctl restart camera-streamer
 Scripts run as the OctoPrint user with no terminal and no stdin. Use `sudo -n` so a missing sudo right fails instead of hanging. When a sudo password was entered, `sudo -n` in scripts is answered with it automatically. A copy of the script is run, so editing it while it runs is safe. Windows line endings are converted on save.
 
 Plugin updates also update built-in scripts you never edited. Edited ones are left alone. "Restore built-in scripts" resets all built-in scripts to their original version. Your own scripts aren't touched.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The bundled xterm.js and its fit addon in `octoprint_piconsole/static/vendor` are MIT licensed by the xterm.js authors (see `static/vendor/LICENSE`).
