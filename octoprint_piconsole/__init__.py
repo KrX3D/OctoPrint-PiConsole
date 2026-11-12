@@ -113,6 +113,21 @@ class PiConsolePlugin(
             css=["vendor/xterm.css", "css/piconsole.css"],
         )
 
+    # ~~ Software Update
+
+    def get_update_information(self, *args, **kwargs):
+        return dict(
+            piconsole=dict(
+                displayName=__plugin_name__,
+                displayVersion=self._plugin_version,
+                type="github_release",
+                user="KrX3D",
+                repo="OctoPrint-PiConsole",
+                current=self._plugin_version,
+                pip="https://github.com/KrX3D/OctoPrint-PiConsole/archive/{target_version}.zip",
+            )
+        )
+
     # ~~ Permissions
 
     def get_additional_permissions(self, *args, **kwargs):
@@ -414,6 +429,7 @@ class PiConsolePlugin(
 
 
 __plugin_name__ = "Pi Console"
+__plugin_version__ = "0.2.2"
 __plugin_pythoncompat__ = ">=3.7,<4"
 
 
@@ -428,4 +444,5 @@ def __plugin_load__():
     __plugin_implementation__ = PiConsolePlugin()
     __plugin_hooks__ = {
         "octoprint.access.permissions": __plugin_implementation__.get_additional_permissions,
+        "octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
     }

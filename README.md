@@ -18,6 +18,8 @@ https://github.com/KrX3D/OctoPrint-PiConsole/archive/main.zip
 
 Linux hosts only (OctoPi / Raspberry Pi OS). Python 3.7+.
 
+Updates show up in OctoPrint's Software Update like for any other plugin. Every version bump on `main` creates a matching GitHub release automatically.
+
 ## Security
 
 - Four permissions: **Terminal**, **Run scripts**, **Edit scripts** and **SSH users**. All are marked dangerous and only the Admins group gets them by default. Change this under Settings > Access Control.
