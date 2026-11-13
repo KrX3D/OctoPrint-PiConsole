@@ -429,7 +429,7 @@ class PiConsolePlugin(
 
 
 __plugin_name__ = "Pi Console"
-__plugin_version__ = "0.2.2"
+__plugin_version__ = "0.2.3"
 __plugin_pythoncompat__ = ">=3.7,<4"
 
 

@@ -28,7 +28,8 @@ class SshError(Exception):
 def _crash_signal(rc):
     """Signal name if a process was killed by a signal (directly or reported by sudo), else None."""
     number = -rc if rc < 0 else rc - 128 if rc > 128 else None
-    if number is None:
+    # 255 is a plain error exit (sshd -t with a bad config), not signal 127
+    if number is None or not 1 <= number <= 64:
         return None
     try:
         return signal.Signals(number).name
