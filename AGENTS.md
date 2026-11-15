@@ -21,4 +21,21 @@ python -m venv /tmp/venv && /tmp/venv/bin/pip install pytest
 CI (`.github/workflows/pr-checks.yml`) runs pytest on Python 3.9/3.11/3.13 plus `bash -n`, `shellcheck -S error` and `node --check`.
 
 ## Manual testing in Docker
-Use the full `python:3.11` image (slim lacks gcc for netifaces), `octoprint serve --iknowwhatimdoing`, and set `plugins.tracking.enabled false` to skip the wizard.
+Checked with OctoPrint 1.11.8. Use the full `python:3.11` image (slim lacks gcc for netifaces). In HomeClaude, Docker runs on a separate daemon (`DOCKER_HOST=tcp://192.168.90.74:2376`): published ports are on that IP, and bind mounts are read-only, so install from a copy.
+
+```
+docker network create pic-test
+docker run -d --name pic-octo --network pic-test -p 5000:5000 -v "$PWD":/src:ro python:3.11 bash -c \
+  'cp -r /src /tmp/plugin && pip install -q OctoPrint /tmp/plugin \
+   && octoprint config set --bool plugins.tracking.enabled false \
+   && octoprint serve --iknowwhatimdoing --host 0.0.0.0 --port 5000'
+# once "Listening on" is in the log (pip takes a minute or two):
+docker exec pic-octo octoprint user add --password test1234 --admin admin
+docker restart pic-octo   # the running server does not see users added by the CLI
+```
+
+- Turning tracking off alone does **not** skip the first-run wizard (backup, classicwebcam, corewizard stay required). After logging in, mark them handled once: `POST /api/setup/wizard` with `{"handled":["backup","classicwebcam","corewizard","file_check","softwareupdate","tracking"]}`.
+- API calls with a session need CSRF: `GET /` first, then send the `csrf_token` cookie value as the `X-CSRF-Token` header on `POST /api/login` and every other POST. Plugin routes are under `/plugin/piconsole/...` (e.g. `GET /plugin/piconsole/scripts`, `POST /plugin/piconsole/scripts/system_info/run`).
+- UI tests: run `mcr.microsoft.com/playwright/python:v1.55.0-noble` on the same network and open `http://pic-octo:5000/`. Login fields are `#login-user`, `#login-password`, `#login-button`; the plugin tab link is `a[href='#tab_plugin_piconsole']`.
+- The container runs as root with no sshd, systemd or sudo, so sudo goes through the root passthrough shim and the SSH tab has nothing real to manage. SSH/sudo changes still need testing on a Pi.
+- Clean up afterwards: `docker rm -f pic-octo && docker network rm pic-test`.
